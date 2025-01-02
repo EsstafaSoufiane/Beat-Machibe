@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     gfortran \
     musl-dev \
     libffi-dev \
+    libblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -31,15 +34,14 @@ RUN pip install --no-cache-dir setuptools wheel
 # Install Cython first
 RUN pip install --no-cache-dir cython==0.29.33
 
-# Install dependencies with optimized settings
-RUN pip install --no-cache-dir \
-    flask==2.0.1 \
-    werkzeug==2.0.1 \
-    pydub==0.25.1 \
-    numpy==1.23.5 \
-    scipy==1.10.1 \
-    gunicorn==20.1.0 \
-    beatmachine
+# Install dependencies one by one
+RUN pip install --no-cache-dir flask==2.0.1
+RUN pip install --no-cache-dir werkzeug==2.0.1
+RUN pip install --no-cache-dir pydub==0.25.1
+RUN pip install --no-cache-dir numpy==1.23.5
+RUN pip install --no-cache-dir scipy==1.10.1
+RUN pip install --no-cache-dir gunicorn==20.1.0
+RUN pip install --no-cache-dir git+https://github.com/jjjake/beatmachine.git
 
 # Install madmom with optimized settings
 RUN CYTHON_BUILD_DIR=/tmp/cython pip install --no-cache-dir madmom==0.16.1
