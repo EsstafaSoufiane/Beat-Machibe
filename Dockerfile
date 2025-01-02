@@ -24,10 +24,10 @@ RUN grep -v "cython\|numpy" requirements.txt > requirements_filtered.txt && \
 COPY . .
 
 # Create uploads directory
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chmod 777 uploads
 
 # Expose port 8080 for Railway
 EXPOSE 8080
 
 # Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "--bind", "0.0.0.0:8080", "app:app"]
