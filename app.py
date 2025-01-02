@@ -6,6 +6,8 @@ import tempfile
 from pydub import AudioSegment
 import logging
 import sys
+import gc
+import resource
 
 # Configure logging
 logging.basicConfig(
@@ -15,6 +17,11 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Set memory limit to 512MB
+def limit_memory():
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, hard))
 
 # Ensure upload directory exists and is writable
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
@@ -67,6 +74,7 @@ def upload_file():
 
 @app.route('/remix', methods=['POST'])
 def remix_audio():
+    temp_files = []  # Keep track of temporary files
     try:
         app.logger.info("Starting remix process")
         data = request.json
@@ -79,7 +87,7 @@ def remix_audio():
             app.logger.error("No filename provided")
             return jsonify({'error': 'No filename provided'}), 400
             
-        pattern = data.get('pattern', [1, 0, 1, 0])  # Default pattern
+        pattern = data.get('pattern', [1, 0, 1, 0])
         speed = float(data.get('speed', 1.0))
         
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -88,54 +96,70 @@ def remix_audio():
         if not os.path.exists(input_path):
             app.logger.error(f"Input file not found: {input_path}")
             return jsonify({'error': 'Input file not found'}), 404
-        
-        app.logger.info("Creating Beats object")
-        beats = Beats.from_song(input_path)
-        
-        effects = []
-        if any(val == 1 for val in pattern):
-            app.logger.info(f"Creating RemapBeats effect with pattern: {pattern}")
-            from beatmachine.effects import RemapBeats
-            beat_pos = pattern.index(1)
-            silence_pos = (len(pattern) - 1) - pattern[::-1].index(0) if 0 in pattern else 0
-            
-            mapping = []
-            for i, val in enumerate(pattern):
-                if val == 1:
-                    mapping.append(beat_pos)
-                else:
-                    mapping.append(silence_pos)
-            
-            app.logger.info(f"Created mapping: {mapping}")
-            effects.append(RemapBeats(mapping=mapping))
-        
-        if effects:
-            app.logger.info("Applying effects")
-            beats = beats.apply_all(*effects)
-        
-        app.logger.info("Creating temporary file for output")
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-        output_path = temp_file.name
-        temp_file.close()
+
+        # Force garbage collection before processing
+        gc.collect()
         
         try:
+            app.logger.info("Creating Beats object")
+            beats = Beats.from_song(input_path)
+            
+            effects = []
+            if any(val == 1 for val in pattern):
+                app.logger.info(f"Creating RemapBeats effect with pattern: {pattern}")
+                from beatmachine.effects import RemapBeats
+                beat_pos = pattern.index(1)
+                silence_pos = (len(pattern) - 1) - pattern[::-1].index(0) if 0 in pattern else 0
+                
+                mapping = []
+                for i, val in enumerate(pattern):
+                    if val == 1:
+                        mapping.append(beat_pos)
+                    else:
+                        mapping.append(silence_pos)
+                
+                app.logger.info(f"Created mapping: {mapping}")
+                effects.append(RemapBeats(mapping=mapping))
+            
+            if effects:
+                app.logger.info("Applying effects")
+                beats = beats.apply_all(*effects)
+            
+            app.logger.info("Creating temporary file for output")
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+            output_path = temp_file.name
+            temp_file.close()
+            temp_files.append(output_path)
+            
             app.logger.info(f"Saving remixed audio to {output_path}")
             beats.save(output_path)
             app.logger.info("Audio saved successfully")
+            
+            # Force garbage collection after processing
+            del beats
+            gc.collect()
+            
             response = send_file(output_path, as_attachment=True, download_name=f'remixed_{filename}')
             app.logger.info("Sending response")
             return response
-        finally:
-            if os.path.exists(output_path):
-                try:
-                    os.unlink(output_path)
-                    app.logger.info("Temporary file cleaned up")
-                except Exception as e:
-                    app.logger.warning(f"Failed to clean up temporary file: {str(e)}")
-                    
+            
+        except MemoryError:
+            app.logger.error("Memory limit exceeded during processing")
+            return jsonify({'error': 'Memory limit exceeded during processing'}), 507
+            
     except Exception as e:
         app.logger.error(f"Error in remix_audio: {str(e)}")
         return jsonify({'error': f'Remix failed: {str(e)}'}), 500
+        
+    finally:
+        # Clean up temporary files
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                try:
+                    os.unlink(temp_file)
+                    app.logger.info(f"Cleaned up temporary file: {temp_file}")
+                except Exception as e:
+                    app.logger.warning(f"Failed to clean up temporary file {temp_file}: {str(e)}")
 
 if __name__ == '__main__':
     # Use environment variable for port, defaulting to 5000

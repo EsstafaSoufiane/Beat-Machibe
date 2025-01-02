@@ -42,5 +42,21 @@ RUN mkdir -p uploads
 # Expose port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "300", "--worker-class", "sync", "--max-requests", "1", "--max-requests-jitter", "0", "--preload", "app:app"]
+# Set environment variables for memory management
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONMALLOC=malloc
+ENV MALLOC_TRIM_THRESHOLD_=65536
+
+# Command to run the application with memory limits
+CMD ["gunicorn", \
+    "--bind", "0.0.0.0:8000", \
+    "--workers", "1", \
+    "--timeout", "300", \
+    "--worker-class", "sync", \
+    "--max-requests", "1", \
+    "--max-requests-jitter", "0", \
+    "--preload", \
+    "--worker-tmp-dir", "/dev/shm", \
+    "--limit-request-line", "0", \
+    "--limit-request-fields", "32768", \
+    "app:app"]
