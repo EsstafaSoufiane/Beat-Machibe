@@ -1,19 +1,20 @@
 # Gunicorn configuration file
 import multiprocessing
 
-# Use only 1 worker to minimize memory usage
+# Worker settings
 workers = 1
-threads = 1
+threads = 2
+worker_class = 'sync'
+worker_connections = 50
 
-# Maximum number of requests a worker will process before restarting
-max_requests = 50
-max_requests_jitter = 10
-
-# Timeout for graceful worker restart
-timeout = 300  # Increased timeout for audio processing
-
-# Keep the worker alive for this many seconds after handling a request
+# Timeouts
+timeout = 600  # 10 minutes
+graceful_timeout = 300  # 5 minutes
 keepalive = 5
+
+# Restart workers periodically to prevent memory leaks
+max_requests = 100
+max_requests_jitter = 10
 
 # Log level
 loglevel = 'info'
@@ -21,16 +22,12 @@ loglevel = 'info'
 # Enable when debugging
 reload = False
 
+# Startup settings
+preload_app = True
+capture_output = True
+enable_stdio_inheritance = True
+
 # Limit worker memory usage
-limit_request_line = 4096
+limit_request_line = 0  # unlimited
 limit_request_fields = 100
-limit_request_field_size = 8190
-
-# Worker class
-worker_class = 'sync'
-
-# Graceful timeout
-graceful_timeout = 120
-
-# Configure worker connections
-worker_connections = 50
+limit_request_field_size = 0  # unlimited
