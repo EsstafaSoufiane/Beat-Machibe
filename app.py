@@ -91,6 +91,5 @@ def remix_audio():
     return send_file(output_path, as_attachment=True, download_name=f'remixed_{filename}')
 
 if __name__ == '__main__':
-    # Only use debug mode when running locally
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=False)
