@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.9
 
 # Install system dependencies required for madmom and other packages
 RUN apt-get update && apt-get install -y \
@@ -10,18 +10,24 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
-
 # Create and activate virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Cython first
-RUN pip install --no-cache-dir Cython==0.29.33
+# Upgrade pip
+RUN pip install --upgrade pip
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies one by one
+RUN pip install --no-cache-dir cython==0.29.33
+RUN pip install --no-cache-dir flask==2.0.1
+RUN pip install --no-cache-dir werkzeug==2.0.1
+RUN pip install --no-cache-dir pydub==0.25.1
+RUN pip install --no-cache-dir numpy==1.23.5
+RUN pip install --no-cache-dir scipy==1.10.1
+RUN pip install --no-cache-dir madmom==0.16.1
+RUN pip install --no-cache-dir python-dotenv==0.19.0
+RUN pip install --no-cache-dir gunicorn==20.1.0
+RUN pip install --no-cache-dir beatmachine
 
 # Copy application code
 COPY . .
