@@ -17,6 +17,9 @@ COPY requirements.txt .
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Install Cython first
+RUN pip install --no-cache-dir Cython==0.29.33
+
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
