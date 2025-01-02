@@ -5,7 +5,9 @@ from beatmachine import Beats
 import tempfile
 import logging
 from logging.handlers import RotatingFileHandler
-from pydub import AudioSegment
+import gc
+import psutil
+import numpy as np
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +18,11 @@ handler.setFormatter(logging.Formatter(
     '[in %(pathname)s:%(lineno)d]'
 ))
 logger.addHandler(handler)
+
+def log_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    logger.info(f'Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB')
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -58,6 +65,8 @@ def upload_file():
 @app.route('/remix', methods=['POST'])
 def remix_audio():
     logger.info('Received remix request')
+    log_memory_usage()
+    
     try:
         if 'file' not in request.files:
             logger.error('No file in request')
@@ -80,13 +89,22 @@ def remix_audio():
             beats = Beats.from_song(input_path)
             pattern = request.form.get('pattern', '1234')
             logger.info(f'Using pattern: {pattern}')
+            
+            # Force garbage collection before processing
+            gc.collect()
+            log_memory_usage()
+            
             output_path = remix_audio(beats, pattern, input_path)
             
-            # Clean up input file after processing
+            # Clean up input file and force garbage collection
             try:
                 os.remove(input_path)
+                del beats
+                gc.collect()
             except Exception as e:
                 logger.warning(f'Failed to remove input file: {e}')
+            
+            log_memory_usage()
                 
             # Send file and clean up
             @after_this_request
@@ -111,6 +129,9 @@ def remix_audio():
     except Exception as e:
         logger.error(f'Unexpected error: {e}')
         return str(e), 500
+    finally:
+        gc.collect()
+        log_memory_usage()
 
 def remix_audio(beats, pattern, input_path):
     try:
@@ -134,9 +155,16 @@ def remix_audio(beats, pattern, input_path):
             
             effects.append(RemapBeats(mapping))
         
-        # Apply effects
-        for effect in effects:
-            beats = effect.apply(beats)
+        # Apply effects in chunks to reduce memory usage
+        chunk_size = 1000  # Process 1000 beats at a time
+        total_beats = len(beats)
+        
+        for i in range(0, total_beats, chunk_size):
+            chunk = beats[i:i+chunk_size]
+            for effect in effects:
+                chunk = effect.apply(chunk)
+            beats[i:i+chunk_size] = chunk
+            gc.collect()
         
         # Save to temporary file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
