@@ -9,9 +9,16 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Cython first
+RUN pip install --no-cache-dir cython==0.29.33
+
+# Install numpy separately (required for madmom)
+RUN pip install --no-cache-dir numpy==1.23.5
+
+# Copy requirements and install remaining Python packages
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN grep -v "cython\|numpy" requirements.txt > requirements_filtered.txt && \
+    pip install --no-cache-dir -r requirements_filtered.txt
 
 # Copy application code
 COPY . .
