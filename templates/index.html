@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beat Machine Remixer</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .pattern-btn.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-8">Beat Machine Remixer</h1>
+        
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-6">
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Upload Audio File</label>
+                <input type="file" id="audioFile" accept=".mp3,.wav" class="w-full p-2 border rounded">
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Beat Pattern</label>
+                <div class="flex space-x-2 mb-4" id="patternContainer">
+                    <button class="pattern-btn px-4 py-2 bg-gray-200 rounded active" data-index="0">1</button>
+                    <button class="pattern-btn px-4 py-2 bg-gray-200 rounded" data-index="1">0</button>
+                    <button class="pattern-btn px-4 py-2 bg-gray-200 rounded active" data-index="2">1</button>
+                    <button class="pattern-btn px-4 py-2 bg-gray-200 rounded" data-index="3">0</button>
+                </div>
+                <button id="addBeat" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Add Beat</button>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Speed</label>
+                <input type="range" id="speedControl" min="0.5" max="2" step="0.1" value="1" class="w-full">
+                <span id="speedValue" class="text-sm text-gray-600">1.0x</span>
+            </div>
+
+            <div class="flex justify-center space-x-4">
+                <button id="remixBtn" class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50">
+                    Remix
+                </button>
+            </div>
+
+            <div id="status" class="mt-4 text-center text-gray-600"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentPattern = [1, 0, 1, 0];
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const patternBtns = document.querySelectorAll('.pattern-btn');
+            const addBeatBtn = document.getElementById('addBeat');
+            const remixBtn = document.getElementById('remixBtn');
+            const speedControl = document.getElementById('speedControl');
+            const speedValue = document.getElementById('speedValue');
+            const statusDiv = document.getElementById('status');
+
+            patternBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    btn.classList.toggle('active');
+                    const index = parseInt(btn.dataset.index);
+                    currentPattern[index] = btn.classList.contains('active') ? 1 : 0;
+                });
+            });
+
+            addBeatBtn.addEventListener('click', () => {
+                const container = document.getElementById('patternContainer');
+                const index = container.children.length;
+                const newBtn = document.createElement('button');
+                newBtn.className = 'pattern-btn px-4 py-2 bg-gray-200 rounded';
+                newBtn.textContent = '0';
+                newBtn.dataset.index = index;
+                
+                newBtn.addEventListener('click', () => {
+                    newBtn.classList.toggle('active');
+                    currentPattern[index] = newBtn.classList.contains('active') ? 1 : 0;
+                });
+                
+                container.appendChild(newBtn);
+                currentPattern.push(0);
+            });
+
+            speedControl.addEventListener('input', (e) => {
+                speedValue.textContent = `${e.target.value}x`;
+            });
+
+            remixBtn.addEventListener('click', async () => {
+                const fileInput = document.getElementById('audioFile');
+                if (!fileInput.files.length) {
+                    alert('Please select an audio file first!');
+                    return;
+                }
+
+                statusDiv.textContent = 'Uploading file...';
+                remixBtn.disabled = true;
+
+                // Upload file first
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+
+                try {
+                    const uploadResponse = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!uploadResponse.ok) throw new Error('Upload failed');
+                    
+                    const uploadData = await uploadResponse.json();
+                    statusDiv.textContent = 'Processing remix...';
+
+                    // Then request remix
+                    const remixResponse = await fetch('/remix', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            filename: uploadData.filename,
+                            pattern: currentPattern,
+                            speed: parseFloat(speedControl.value)
+                        })
+                    });
+
+                    if (!remixResponse.ok) throw new Error('Remix failed');
+
+                    // Create download
+                    const blob = await remixResponse.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'remixed_audio.wav';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    statusDiv.textContent = 'Remix complete! Download started.';
+                } catch (error) {
+                    statusDiv.textContent = `Error: ${error.message}`;
+                } finally {
+                    remixBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

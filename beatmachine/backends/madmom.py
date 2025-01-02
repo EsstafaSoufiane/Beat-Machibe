@@ -4,24 +4,28 @@ import typing as t
 import numpy as np
 from madmom.audio import Signal
 from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
-from madmom.models import MODEL_PATH as MADMOM_MODEL_PATH
+import os
+import site
+
+# Look for models in the site-packages directory
+SITE_PACKAGES = site.getsitepackages()[0]
+MADMOM_MODEL_PATH = os.path.join(SITE_PACKAGES, 'madmom', 'models')
 
 
 class MadmomDbnBackend:
-    def __init__(self, min_bpm: int = 60, max_bpm: int = 300, fps: int = 100, model_count: int = 8) -> None:
+    def __init__(self, min_bpm: int = 55, max_bpm: int = 215, fps: int = 100, model_count: int = 1) -> None:
         super().__init__()
         self.min_bpm = min_bpm
         self.max_bpm = max_bpm
         self.fps = fps
         self.model_count = model_count
-
-    def _get_nn_files(self) -> t.Iterable[str]:
-        return sorted(glob.glob(f"{MADMOM_MODEL_PATH}/beats/2015/beats_blstm_[1-{self.model_count}].pkl"))
+        
+        # Initialize processors
+        self.processor = RNNBeatProcessor(online=True, fps=self.fps)
+        self.tracker = DBNBeatTrackingProcessor(min_bpm=self.min_bpm, max_bpm=self.max_bpm, fps=self.fps)
 
     def locate_beats(self, signal: np.ndarray, sample_rate: int) -> np.ndarray:
-        madmom_signal = Signal(signal, sample_rate)
-        tracker = DBNBeatTrackingProcessor(min_bpm=self.min_bpm, max_bpm=self.max_bpm, fps=self.fps)
-        processor = RNNBeatProcessor(nn_files=self._get_nn_files())
-
-        # tracker returns positions in sec
-        return (tracker(processor(madmom_signal)) * madmom_signal.sample_rate).astype(np.int64)
+        madmom_signal = Signal(signal, sample_rate=sample_rate)
+        activations = self.processor(madmom_signal)
+        beats = self.tracker(activations)
+        return (beats * madmom_signal.sample_rate).astype(np.int64)
