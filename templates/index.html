@@ -96,41 +96,28 @@
                     return;
                 }
 
-                statusDiv.textContent = 'Uploading file...';
+                statusDiv.textContent = 'Processing...';
                 remixBtn.disabled = true;
 
-                // Upload file first
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-
                 try {
-                    const uploadResponse = await fetch('/upload', {
+                    // Create form data with all parameters
+                    const formData = new FormData();
+                    formData.append('file', fileInput.files[0]);
+                    formData.append('pattern', currentPattern.join('')); // Convert pattern array to string
+                    formData.append('speed', speedControl.value);
+
+                    // Send remix request
+                    const response = await fetch('/remix', {
                         method: 'POST',
                         body: formData
                     });
-                    
-                    if (!uploadResponse.ok) throw new Error('Upload failed');
-                    
-                    const uploadData = await uploadResponse.json();
-                    statusDiv.textContent = 'Processing remix...';
 
-                    // Then request remix
-                    const remixResponse = await fetch('/remix', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            filename: uploadData.filename,
-                            pattern: currentPattern,
-                            speed: parseFloat(speedControl.value)
-                        })
-                    });
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
 
-                    if (!remixResponse.ok) throw new Error('Remix failed');
-
-                    // Create download
-                    const blob = await remixResponse.blob();
+                    // Handle the response
+                    const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -143,6 +130,7 @@
                     statusDiv.textContent = 'Remix complete! Download started.';
                 } catch (error) {
                     statusDiv.textContent = `Error: ${error.message}`;
+                    console.error('Error:', error);
                 } finally {
                     remixBtn.disabled = false;
                 }
