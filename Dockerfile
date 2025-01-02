@@ -8,12 +8,16 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Cython first
-RUN pip install cython==0.29.33
+# Install Cython and numpy first
+RUN pip install --no-cache-dir \
+    cython==0.29.33 \
+    numpy==1.23.5
 
 # Copy requirements and install Python packages
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Remove Cython and numpy from requirements since they're already installed
+RUN grep -v "cython\|numpy" requirements.txt > requirements_filtered.txt && \
+    pip install -r requirements_filtered.txt
 
 # Copy application code
 COPY . .
