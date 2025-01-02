@@ -1,16 +1,16 @@
 # Gunicorn configuration file
 import multiprocessing
 
-# Number of worker processes for handling requests
-workers = 2  # Reduced number of workers to conserve memory
+# Use only 1 worker to minimize memory usage
+workers = 1
 threads = 1
 
 # Maximum number of requests a worker will process before restarting
-max_requests = 1000
-max_requests_jitter = 50
+max_requests = 50
+max_requests_jitter = 10
 
 # Timeout for graceful worker restart
-timeout = 120  # Increased timeout for audio processing
+timeout = 300  # Increased timeout for audio processing
 
 # Keep the worker alive for this many seconds after handling a request
 keepalive = 5
@@ -25,3 +25,12 @@ reload = False
 limit_request_line = 4096
 limit_request_fields = 100
 limit_request_field_size = 8190
+
+# Worker class
+worker_class = 'sync'
+
+# Graceful timeout
+graceful_timeout = 120
+
+# Configure worker connections
+worker_connections = 50

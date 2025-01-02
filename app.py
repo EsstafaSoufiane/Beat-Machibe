@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, after_this_request
 import os
 from werkzeug.utils import secure_filename
 from beatmachine import Beats
@@ -45,15 +45,51 @@ def upload_file():
 
 @app.route('/remix', methods=['POST'])
 def remix_audio():
-    data = request.json
-    filename = data.get('filename')
-    pattern = data.get('pattern', [1, 0, 1, 0])  # Default pattern
-    speed = float(data.get('speed', 1.0))
+    if 'file' not in request.files:
+        return 'No file uploaded', 400
     
+    file = request.files['file']
+    if not file.filename:
+        return 'No file selected', 400
+    
+    filename = secure_filename(file.filename)
     input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     
-    # Create a Beats object from the song
-    beats = Beats.from_song(input_path)
+    try:
+        file.save(input_path)
+        
+        # Process the audio
+        beats = Beats.from_song(input_path)
+        pattern = request.form.get('pattern', '1234')
+        output_path = remix_audio(beats, pattern, input_path)
+        
+        # Clean up input file after processing
+        try:
+            os.remove(input_path)
+        except:
+            pass
+            
+        # Send file and clean up
+        @after_this_request
+        def cleanup(response):
+            try:
+                os.remove(output_path)
+            except:
+                pass
+            return response
+            
+        return send_file(output_path, as_attachment=True, download_name=f'remixed_{filename}')
+        
+    except Exception as e:
+        # Clean up in case of error
+        try:
+            os.remove(input_path)
+        except:
+            pass
+        return str(e), 500
+
+def remix_audio(beats, pattern, input_path):
+    speed = float(request.form.get('speed', 1.0))
     
     # Create effects based on pattern and speed
     effects = []
@@ -62,17 +98,17 @@ def remix_audio():
     # For example, if pattern is [1, 0, 1, 0], we want to keep beats 0 and 2
     # To do this with RemapBeats, we create a mapping that repeats beat 0 when we want a beat
     # and repeats the last silent beat when we want silence
-    if any(val == 1 for val in pattern):  # Only apply if we have any beats to keep
+    if any(val == '1' for val in pattern):  # Only apply if we have any beats to keep
         from beatmachine.effects import RemapBeats
         # Find first beat position (will be used for all beats)
-        beat_pos = pattern.index(1)
+        beat_pos = pattern.index('1')
         # Find last silent position (will be used for all silences)
-        silence_pos = (len(pattern) - 1) - pattern[::-1].index(0) if 0 in pattern else 0
+        silence_pos = (len(pattern) - 1) - pattern[::-1].index('0') if '0' in pattern else 0
         
         # Create mapping array
         mapping = []
         for i, val in enumerate(pattern):
-            if val == 1:
+            if val == '1':
                 mapping.append(beat_pos)  # Use the first beat position
             else:
                 mapping.append(silence_pos)  # Use the silent position
@@ -88,7 +124,7 @@ def remix_audio():
     output_path = temp_file.name
     beats.save(output_path)
     
-    return send_file(output_path, as_attachment=True, download_name=f'remixed_{filename}')
+    return output_path
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
