@@ -1,4 +1,4 @@
-FROM python:3.9
+FROM python:3.9-slim
 
 # Install system dependencies required for madmom and other packages
 RUN apt-get update && apt-get install -y \
@@ -22,22 +22,30 @@ RUN pip install --no-cache-dir setuptools wheel
 RUN pip install --no-cache-dir cython==0.29.33
 RUN /usr/local/bin/pip install --no-cache-dir cython==0.29.33
 
-# Install dependencies one by one
-RUN pip install --no-cache-dir flask==2.0.1
-RUN pip install --no-cache-dir werkzeug==2.0.1
-RUN pip install --no-cache-dir pydub==0.25.1
-RUN pip install --no-cache-dir numpy==1.23.5
-RUN pip install --no-cache-dir scipy==1.10.1
+# Install dependencies one by one with optimized settings
+RUN pip install --no-cache-dir \
+    flask==2.0.1 \
+    werkzeug==2.0.1 \
+    pydub==0.25.1 \
+    numpy==1.23.5 \
+    scipy==1.10.1 \
+    gunicorn==20.1.0 \
+    beatmachine
+
+# Install madmom with optimized settings
 RUN CYTHON_BUILD_DIR=/tmp/cython pip install --no-cache-dir madmom==0.16.1
-RUN pip install --no-cache-dir python-dotenv==0.19.0
-RUN pip install --no-cache-dir gunicorn==20.1.0
-RUN pip install --no-cache-dir beatmachine
 
 # Copy application code
 COPY . .
 
 # Create uploads directory
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chmod 777 uploads
+
+# Create a swap file to help with memory management
+RUN dd if=/dev/zero of=/swapfile bs=1M count=1024 && \
+    chmod 600 /swapfile && \
+    mkswap /swapfile && \
+    echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
 
 # Expose port
 EXPOSE 8000
@@ -46,17 +54,20 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONMALLOC=malloc
 ENV MALLOC_TRIM_THRESHOLD_=65536
+ENV PYTHONOPTIMIZE=2
+ENV MADMOM_AUDIO_BACKEND=ffmpeg
 
 # Command to run the application with memory limits
-CMD ["gunicorn", \
-    "--bind", "0.0.0.0:8000", \
-    "--workers", "1", \
-    "--timeout", "300", \
-    "--worker-class", "sync", \
-    "--max-requests", "1", \
-    "--max-requests-jitter", "0", \
-    "--preload", \
-    "--worker-tmp-dir", "/dev/shm", \
-    "--limit-request-line", "0", \
-    "--limit-request-fields", "32768", \
-    "app:app"]
+CMD swapon /swapfile && \
+    gunicorn \
+    --bind 0.0.0.0:8000 \
+    --workers 1 \
+    --timeout 300 \
+    --worker-class sync \
+    --max-requests 1 \
+    --max-requests-jitter 0 \
+    --preload \
+    --worker-tmp-dir /dev/shm \
+    --limit-request-line 0 \
+    --limit-request-fields 32768 \
+    app:app
