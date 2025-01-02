@@ -16,17 +16,18 @@ logging.basicConfig(
     ]
 )
 
+# Ensure upload directory exists and is writable
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 extra_files = [
     os.path.join(os.path.dirname(__file__), 'templates'),
     __file__
 ]
-
-# Ensure upload directory exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'mp3', 'wav'}
 
@@ -39,83 +40,98 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        return jsonify({'filename': filename}), 200
-    
-    return jsonify({'error': 'Invalid file type'}), 400
+    try:
+        app.logger.info("Starting file upload")
+        if 'file' not in request.files:
+            app.logger.error("No file part in request")
+            return jsonify({'error': 'No file part'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            app.logger.error("No selected file")
+            return jsonify({'error': 'No selected file'}), 400
+        
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            app.logger.info(f"Saving file to {filepath}")
+            file.save(filepath)
+            app.logger.info(f"File saved successfully: {filename}")
+            return jsonify({'filename': filename}), 200
+        
+        app.logger.error(f"Invalid file type: {file.filename}")
+        return jsonify({'error': 'Invalid file type'}), 400
+    except Exception as e:
+        app.logger.error(f"Error in upload_file: {str(e)}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/remix', methods=['POST'])
 def remix_audio():
     try:
+        app.logger.info("Starting remix process")
         data = request.json
         if not data:
+            app.logger.error("No JSON data received")
             return jsonify({'error': 'No JSON data received'}), 400
             
         filename = data.get('filename')
         if not filename:
+            app.logger.error("No filename provided")
             return jsonify({'error': 'No filename provided'}), 400
             
         pattern = data.get('pattern', [1, 0, 1, 0])  # Default pattern
         speed = float(data.get('speed', 1.0))
         
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        app.logger.info(f"Input file path: {input_path}")
+        
         if not os.path.exists(input_path):
+            app.logger.error(f"Input file not found: {input_path}")
             return jsonify({'error': 'Input file not found'}), 404
         
-        # Create a Beats object from the song
+        app.logger.info("Creating Beats object")
         beats = Beats.from_song(input_path)
         
-        # Create effects based on pattern and speed
         effects = []
-        
-        # Create a mapping array that preserves the pattern
-        if any(val == 1 for val in pattern):  # Only apply if we have any beats to keep
+        if any(val == 1 for val in pattern):
+            app.logger.info(f"Creating RemapBeats effect with pattern: {pattern}")
             from beatmachine.effects import RemapBeats
-            # Find first beat position (will be used for all beats)
             beat_pos = pattern.index(1)
-            # Find last silent position (will be used for all silences)
             silence_pos = (len(pattern) - 1) - pattern[::-1].index(0) if 0 in pattern else 0
             
-            # Create mapping array
             mapping = []
             for i, val in enumerate(pattern):
                 if val == 1:
-                    mapping.append(beat_pos)  # Use the first beat position
+                    mapping.append(beat_pos)
                 else:
-                    mapping.append(silence_pos)  # Use the silent position
-                    
+                    mapping.append(silence_pos)
+            
+            app.logger.info(f"Created mapping: {mapping}")
             effects.append(RemapBeats(mapping=mapping))
         
-        # Apply all effects
         if effects:
+            app.logger.info("Applying effects")
             beats = beats.apply_all(*effects)
         
-        # Export to temporary file
+        app.logger.info("Creating temporary file for output")
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
         output_path = temp_file.name
-        temp_file.close()  # Close the file before writing to it
+        temp_file.close()
         
         try:
+            app.logger.info(f"Saving remixed audio to {output_path}")
             beats.save(output_path)
+            app.logger.info("Audio saved successfully")
             response = send_file(output_path, as_attachment=True, download_name=f'remixed_{filename}')
+            app.logger.info("Sending response")
             return response
         finally:
-            # Clean up the temporary file after sending
             if os.path.exists(output_path):
                 try:
                     os.unlink(output_path)
-                except:
-                    pass  # Ignore cleanup errors
+                    app.logger.info("Temporary file cleaned up")
+                except Exception as e:
+                    app.logger.warning(f"Failed to clean up temporary file: {str(e)}")
                     
     except Exception as e:
         app.logger.error(f"Error in remix_audio: {str(e)}")
