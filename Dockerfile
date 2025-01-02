@@ -43,4 +43,4 @@ RUN mkdir -p uploads
 EXPOSE 8000
 
 # Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "300", "--worker-class", "sync", "--max-requests", "1", "--max-requests-jitter", "0", "--preload", "app:app"]

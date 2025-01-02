@@ -141,4 +141,32 @@ if __name__ == '__main__':
     # Use environment variable for port, defaulting to 5000
     port = int(os.environ.get('PORT', 5000))
     # In production, disable debug mode and bind to all interfaces
-    app.run(host='0.0.0.0', port=port, debug=False)
+    from gunicorn.app.base import BaseApplication
+
+    class StandaloneApplication(BaseApplication):
+        def __init__(self, app, options=None):
+            self.options = options or {}
+            self.application = app
+            super().__init__()
+
+        def load_config(self):
+            for key, value in self.options.items():
+                self.cfg.set(key, value)
+
+        def load(self):
+            return self.application
+
+    options = {
+        'bind': f'0.0.0.0:{port}',
+        'workers': 1,  # Single worker to manage memory better
+        'timeout': 300,  # 5 minutes timeout
+        'worker_class': 'sync',
+        'max_requests': 1,  # Restart worker after each request to free memory
+        'max_requests_jitter': 0,
+        'preload_app': False,
+    }
+
+    StandaloneApplication(app, options).run()
+else:
+    # This allows gunicorn to handle the app when not run directly
+    application = app
